@@ -1,0 +1,8 @@
+$schema: https://azuremlschemas.azureedge.net/latest/connection.schema.json
+name: NAME
+type: azure_open_ai
+azure_endpoint: ENDPOINT
+credentials:
+  type: api_key
+  key: KEY
+open_ai_resource_id: RESOURCEID

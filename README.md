@@ -5,6 +5,8 @@
 Uses Azure CLI to create:
 
 - Resource Group
+- Azure AI Foundry Hub
+- Azure AI Foundry Project
 - Azure Open AI
 - Model deployments
   - Chat completion
@@ -26,9 +28,18 @@ $random = Get-Random -Minimum 1000 -Maximum 9999
 $resourceGroup = $prefix + "-aidemo-rg" 
 $location = "swedencentral"
 
+$aiHubCreate = $true
+    $aiHubName = $prefix + "-hub-" + $random
+    $aiHubLocation = $location 
+
+$aiProjectCreate = $true
+    $aiProjectName = $prefix + "-project-" + $random
+    $aiProjectHubName = $aiHubName
+
 $csAzOpenAICreate = $true
     $csAzOpenAIName = $prefix + "-azopenai-" + $random
     $csAzOpenAILocation = $location 
+    $csAzOpenAIAddToProject = $true
 
 $modelChatCompletionCreate = $true
     $modelChatCompletionFormat = "OpenAI"

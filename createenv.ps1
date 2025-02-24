@@ -1,14 +1,23 @@
 # Create AI Demo Environment 
 
-$prefix = "mark"
+$prefix = "marks"
 $random = Get-Random -Minimum 1000 -Maximum 9999
 
 $resourceGroup = $prefix + "-aidemo-rg" 
 $location = "swedencentral"
 
+$aiHubCreate = $true
+    $aiHubName = $prefix + "-hub-" + $random
+    $aiHubLocation = $location 
+
+$aiProjectCreate = $true
+    $aiProjectName = $prefix + "-project-" + $random
+    $aiProjectHubName = $aiHubName
+
 $csAzOpenAICreate = $true
     $csAzOpenAIName = $prefix + "-azopenai-" + $random
     $csAzOpenAILocation = $location 
+    $csAzOpenAIAddToProject = $true
 
 $modelChatCompletionCreate = $true
     $modelChatCompletionFormat = "OpenAI"
@@ -24,7 +33,7 @@ $modelEmbeddingCreate = $true
     $modelEmbeddingName = "text-embedding-ada-002"
     $modelEmbeddingVersion = "2"
     $modelEmbeddingScaleType = "Standard"
-    $modelEmbeddingSkuCapacity = 100
+    $modelEmbeddingSkuCapacity = 50
 
 $modelImageGenCreate = $false
     $modelImageGenFormat = "OpenAI"
@@ -34,7 +43,7 @@ $modelImageGenCreate = $false
     $modelImageGenScaleType = "Standard"
     $modelImageGenSkuCapacity = "Standard"
 
-$aiSearchCreate = $true
+$aiSearchCreate = $false
     $aiSearchName = $prefix + "-aisearch-" + $random
     $aiSearchSku = "Basic"
     $aiSearchLocation = $location
@@ -53,7 +62,6 @@ $stgCreate = $false
     $stgName = $prefix + "storage" + $random
     $stgSku = "Standard_LRS"
     $stgLocation = $location
-
 
 # --- Azure Login ----
 Write-Host "Authenticating ..."
@@ -130,6 +138,61 @@ Write-Host "$resourceGroup " -ForegroundColor Cyan -NoNewline
 Write-Host "Location: "  -NoNewline
 Write-Host "$location " -ForegroundColor Cyan 
 
+
+# --- Create Azure AI Hub & Project ----
+
+# az extension add -n ml
+# az extension update --name ml
+
+if ($aiHubCreate) {
+
+    Write-Host "`nCreating Azure AI Hub ..."
+
+    az ml workspace create --kind hub --name $aiHubName --resource-group $resourceGroup --location $aiHubLocation --output none
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "$([char]0x2717) Failed to create Azure AI Hub." -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "$([char]0x2713) Azure AI Hub created. " -ForegroundColor Green  
+    Write-Host "Hub Name: " -NoNewline
+    Write-Host "$aiHubName " -ForegroundColor Cyan -NoNewline
+    Write-Host "Location: " -NoNewline
+    Write-Host "$aiHubLocation " -ForegroundColor Cyan  
+
+}
+
+if ($aiProjectCreate) {
+
+    Write-Host "`nCreating Azure AI Project ..."
+
+    $aiHubId=$(az ml workspace show --name $aiProjectHubName --resource-group $resourceGroup --query id -o tsv)
+
+    az ml workspace create --kind project --hub-id $aiHubId --resource-group $resourceGroup --name $aiProjectName  --output none
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "$([char]0x2717) Failed to create Azure AI Project." -ForegroundColor Red
+        exit 1
+    }
+
+    $inputString=$(az ml workspace show --name markk-project-2071 --resource-group markk-aidemo-rg --query mlflow_tracking_uri -o tsv)
+
+    $aiProjectNameConnectionString = $inputString -replace '^azureml://', '' `
+                                    -replace '/mlflow/v1\.0/subscriptions/', ';' `
+                                    -replace '/resourceGroups/', ';' `
+                                    -replace '/providers/Microsoft\.MachineLearningServices/workspaces/', ';'
+
+    Write-Host "$([char]0x2713) Azure AI Project created. " -ForegroundColor Green  
+    Write-Host "Project Name: " -NoNewline
+    Write-Host "$aiProjectName " -ForegroundColor Cyan -NoNewline
+    Write-Host "Hub Name: " -NoNewline
+    Write-Host "$aiHubName " -ForegroundColor Cyan -NoNewline
+    Write-Host "Connection String: " -NoNewline
+    Write-Host "$aiProjectNameConnectionString " -ForegroundColor Cyan  
+
+}
+
 # --- Create Azure OpenAI Account ----
 
 if ($csAzOpenAICreate) {
@@ -176,6 +239,49 @@ if ($csAzOpenAICreate) {
     Write-Host "Models Available:" 
 
     az cognitiveservices account list-models -n $csAzOpenAIName -g $resourceGroup -o table 
+
+    if ($csAzOpenAIAddToProject) {
+
+        Write-Host "`nConnecting Azure OpenAI Account to AI Foundry Project..."
+
+        $csAzOpenAIResourceId = az cognitiveservices account show `
+            --name $csAzOpenAIName `
+            --resource-group $resourceGroup `
+            --query id `
+            --output tsv 
+
+        [string[]]$fileContent = Get-Content "openai-connection.yaml"
+        $content = $fileContent -join "`n"
+
+        $yaml = ConvertFrom-YAML $content
+
+        $yaml.name = $csAzOpenAIName
+        $yaml.azure_endpoint = $csAzOpenAIEndpoint
+        $yaml.credentials.key = $csAzOpenAIApiKey
+        $yaml.open_ai_resource_id = $csAzOpenAIResourceId
+
+        $newYamlContent = ConvertTo-YAML $yaml
+
+        Set-Content -Path "openai-connection-temp.yaml" -Value $newYamlContent
+
+        az ml connection create --file "openai-connection-temp.yaml" `
+            --resource-group $resourceGroup `
+            --workspace-name  $aiProjectName `
+            --output none
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "$([char]0x2717) Failed to add Azure OpenAI connection to AI Foundry Project." -ForegroundColor Red
+            exit 1
+        }
+
+        Write-Host "$([char]0x2713) Azure OpenAI connection to AI Foundry Project created. " -ForegroundColor Green  
+        Write-Host "OpenAI Name: " -NoNewline
+        Write-Host "$csAzOpenAIName " -ForegroundColor Cyan -NoNewline
+        Write-Host "Project Name: " -NoNewline
+        Write-Host "$aiProjectName " -ForegroundColor Cyan  
+
+    }
+
 
 }
 
@@ -456,6 +562,9 @@ function Set-ConfigurationFileVariable($configurationFile, $variableName, $varia
 
 Set-ConfigurationFileVariable $configurationFile "resourceGroup" $resourceGroup
 Set-ConfigurationFileVariable $configurationFile "location" $location 
+Set-ConfigurationFileVariable $configurationFile "aiFoundryHubName" $aiHubName
+Set-ConfigurationFileVariable $configurationFile "aiFoundryProjectName" $aiProjectName
+Set-ConfigurationFileVariable $configurationFile "aiFoundryProjectConnectionstring" $aiProjectNameConnectionString
 Set-ConfigurationFileVariable $configurationFile "csAzOpenAIName" ($prefix + "-azopenai-" + $random)
 Set-ConfigurationFileVariable $configurationFile "csAzOpenAIApiKey" $csAzOpenAIApiKey 
 Set-ConfigurationFileVariable $configurationFile "csAzOpenAIEndpoint" $csAzOpenAIEndpoint
