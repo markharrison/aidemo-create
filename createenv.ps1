@@ -176,7 +176,7 @@ if ($aiProjectCreate) {
         exit 1
     }
 
-    $inputString=$(az ml workspace show --name markk-project-2071 --resource-group markk-aidemo-rg --query mlflow_tracking_uri -o tsv)
+    $inputString=$(az ml workspace show --name $aiProjectName --resource-group $resourceGroup  --query mlflow_tracking_uri -o tsv)
 
     $aiProjectNameConnectionString = $inputString -replace '^azureml://', '' `
                                     -replace '/mlflow/v1\.0/subscriptions/', ';' `
